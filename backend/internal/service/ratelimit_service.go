@@ -74,6 +74,8 @@ const (
 
 var openAIImageTryAgainPattern = regexp.MustCompile(`(?i)try again in\s+([0-9]+(?:\.[0-9]+)?)\s*(ms|s|sec|secs|second|seconds|m|min|mins|minute|minutes)`)
 
+var openCodeGoUsageLimitResetPattern = regexp.MustCompile(`(?i)\bresets\s+in\s+([0-9]+(?:\.[0-9]+)?)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks)\b`)
+
 const (
 	openAI403CooldownMinutesDefault = 10
 	openAI403DisableThreshold       = 3
@@ -1446,7 +1448,7 @@ func (s *RateLimitService) persistOpenAICodexSnapshot(ctx context.Context, accou
 	}
 }
 
-// parseOpenAIRateLimitResetTime 解析 OpenAI 格式的 429 响应，返回重置时间的 Unix 时间戳
+// parseOpenAIRateLimitResetTime 解析 OpenAI 兼容格式的 429 响应，返回重置时间的 Unix 时间戳
 // OpenAI 的 usage_limit_reached 错误格式：
 //
 //	{
@@ -1468,9 +1470,9 @@ func parseOpenAIRateLimitResetTime(body []byte) *int64 {
 		return nil
 	}
 
-	// 检查是否为 usage_limit_reached 或 rate_limit_exceeded 类型
+	// 检查是否为已知的账号用量限制类型。
 	errType, _ := errObj["type"].(string)
-	if errType != "usage_limit_reached" && errType != "rate_limit_exceeded" {
+	if errType != "usage_limit_reached" && errType != "rate_limit_exceeded" && errType != "GoUsageLimitError" {
 		return nil
 	}
 
@@ -1497,7 +1499,47 @@ func parseOpenAIRateLimitResetTime(body []byte) *int64 {
 		}
 	}
 
+	// OpenCode Go subscriptions expose the reset only in a human-readable message,
+	// for example: "Weekly usage limit reached. Resets in 2 days."
+	if errType == "GoUsageLimitError" {
+		message, _ := errObj["message"].(string)
+		if resetAfter := parseOpenCodeGoUsageLimitResetDuration(message); resetAfter > 0 {
+			ts := time.Now().Add(resetAfter).Unix()
+			return &ts
+		}
+	}
+
 	return nil
+}
+
+func parseOpenCodeGoUsageLimitResetDuration(message string) time.Duration {
+	matches := openCodeGoUsageLimitResetPattern.FindStringSubmatch(message)
+	if len(matches) != 3 {
+		return 0
+	}
+
+	value, err := strconv.ParseFloat(matches[1], 64)
+	if err != nil || value <= 0 {
+		return 0
+	}
+
+	var unit time.Duration
+	switch strings.ToLower(matches[2]) {
+	case "s", "sec", "secs", "second", "seconds":
+		unit = time.Second
+	case "m", "min", "mins", "minute", "minutes":
+		unit = time.Minute
+	case "h", "hr", "hrs", "hour", "hours":
+		unit = time.Hour
+	case "d", "day", "days":
+		unit = 24 * time.Hour
+	case "w", "week", "weeks":
+		unit = 7 * 24 * time.Hour
+	default:
+		return 0
+	}
+
+	return time.Duration(value * float64(unit))
 }
 
 func parseOpenAIRateLimitPlanType(body []byte) string {
