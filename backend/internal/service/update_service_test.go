@@ -185,3 +185,60 @@ func TestUpdateServiceRollbackToVersionAcceptsVPrefix(t *testing.T) {
 	require.NotErrorIs(t, err, ErrRollbackVersionNotAllowed)
 	require.Contains(t, err.Error(), "no compatible release found")
 }
+
+// 构建版本号可能带预发布/构建元数据后缀（例如本地 fork 构建的 "0.1.179-fork-attest"）。
+// 这类后缀只是标记，不参与版本高低比较：同数值主干视为同版本，上游数值主干更高才算新版本。
+func TestCompareVersionsIgnoresPrereleaseAndBuildSuffix(t *testing.T) {
+	for _, tc := range []struct {
+		current string
+		latest  string
+		want    int
+	}{
+		{"0.1.179-fork-attest", "0.1.179", 0},  // fork 构建 == 同版本号的上游发行版
+		{"0.1.179-fork-attest", "0.1.180", -1}, // 上游发新版本仍要提示更新
+		{"0.1.179-fork-attest", "0.1.178", 1},  // 上游更旧
+		{"v0.1.179-rc.1", "0.1.179", 0},        // v 前缀 + 预发布后缀
+		{"0.1.179+dirty", "0.1.179", 0},        // 构建元数据后缀
+		{"0.2.0-fork", "0.1.999", 1},           // 后缀不影响 minor 位比较
+	} {
+		got := compareVersions(tc.current, tc.latest)
+		require.Equal(t, tc.want, got, "compareVersions(%q, %q)", tc.current, tc.latest)
+	}
+}
+
+func TestUpdateServiceCheckUpdateWithSuffixedCurrentVersion(t *testing.T) {
+	newSvc := func(latestTag string) *UpdateService {
+		return NewUpdateService(
+			&updateServiceCacheStub{},
+			&updateServiceGitHubClientStub{release: &GitHubRelease{TagName: latestTag, Name: latestTag}},
+			"0.1.179-fork-attest",
+			"release",
+		)
+	}
+
+	sameVersion, err := newSvc("v0.1.179").CheckUpdate(context.Background(), true)
+	require.NoError(t, err)
+	require.False(t, sameVersion.HasUpdate, "fork build must not be reported as behind the same upstream version")
+
+	newerVersion, err := newSvc("v0.1.180").CheckUpdate(context.Background(), true)
+	require.NoError(t, err)
+	require.True(t, newerVersion.HasUpdate, "a genuinely newer upstream release must still be offered")
+	require.Equal(t, "0.1.180", newerVersion.LatestVersion)
+}
+
+func TestUpdateServiceListRollbackVersionsWithSuffixedCurrentVersion(t *testing.T) {
+	releases := []*GitHubRelease{
+		{TagName: "v0.1.180", PublishedAt: "2026-08-21T00:00:00Z"}, // newer than current: excluded
+		{TagName: "v0.1.179", PublishedAt: "2026-08-20T00:00:00Z"}, // same numeric core as current: excluded
+		{TagName: "v0.1.178", PublishedAt: "2026-08-19T00:00:00Z"},
+		{TagName: "v0.1.177", PublishedAt: "2026-08-18T00:00:00Z"},
+	}
+	svc := newRollbackTestService("0.1.179-fork-attest", releases)
+
+	versions, err := svc.ListRollbackVersions(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, versions, 2)
+	require.Equal(t, "0.1.178", versions[0].Version)
+	require.Equal(t, "0.1.177", versions[1].Version)
+}

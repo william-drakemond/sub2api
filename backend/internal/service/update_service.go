@@ -655,6 +655,12 @@ func compareVersions(current, latest string) int {
 
 func parseVersion(v string) [3]int {
 	v = strings.TrimPrefix(v, "v")
+	// 只取数值主干，丢弃预发布/构建元数据后缀（0.1.179-fork-attest -> 0.1.179）。
+	// 否则 strconv.Atoi 解析失败会让该位静默退化为 0，本地 fork 构建会被判为
+	// 落后于同版本号的上游发行版，永远提示“有新版本”，回滚列表也会被清空。
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		v = v[:i]
+	}
 	parts := strings.Split(v, ".")
 	result := [3]int{0, 0, 0}
 	for i := 0; i < len(parts) && i < 3; i++ {
