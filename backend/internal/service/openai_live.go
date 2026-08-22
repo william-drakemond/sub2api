@@ -301,7 +301,9 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 	}
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Accept", "application/sdp")
-	upstreamReq.Header.Set(liveAttestationHeader, attestation)
+	if attestation != "" {
+		upstreamReq.Header.Set(liveAttestationHeader, attestation)
+	}
 	applyLiveUpstreamIdentityHeaders(upstreamReq.Header)
 
 	resp, err := s.doOpenAIUpstream(upstreamReq, resolveAccountProxyURL(account), account)
@@ -433,7 +435,9 @@ func (s *OpenAIGatewayService) liveSidebandHeaders(
 	if err != nil {
 		return nil, err
 	}
-	headers.Set(liveAttestationHeader, attestation)
+	if attestation != "" {
+		headers.Set(liveAttestationHeader, attestation)
+	}
 	applyLiveUpstreamIdentityHeaders(headers)
 	return headers, nil
 }

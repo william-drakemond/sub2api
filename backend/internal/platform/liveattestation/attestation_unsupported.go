@@ -6,10 +6,6 @@ import "context"
 
 type unsupportedProvider struct{}
 
-func NewProvider() Provider {
-	return unsupportedProvider{}
-}
-
 func (unsupportedProvider) Check(context.Context) error {
 	return ErrUnsupportedPlatform
 }

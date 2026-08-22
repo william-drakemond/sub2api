@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -70,7 +71,17 @@ func (c *liveAttestationAES) Decrypt(ciphertext string) (string, error) {
 	return string(plaintext), nil
 }
 
+// liveAttestationDisabled reports whether Live calls should go upstream with no DeviceCheck
+// attestation header. Set SUB2API_LIVE_ATTESTATION_DISABLED=true to reproduce the shape used by
+// first-party clients that do not mint one.
+func liveAttestationDisabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("SUB2API_LIVE_ATTESTATION_DISABLED")), "true")
+}
+
 func (s *OpenAIGatewayService) prepareLiveAttestation(ctx context.Context) (string, string, error) {
+	if liveAttestationDisabled() {
+		return "", "", nil
+	}
 	if s == nil || s.liveAttestation == nil {
 		return "", "", &LiveAttestationUnavailableError{
 			Reason: "Sub2API has no platform DeviceCheck provider",
@@ -95,6 +106,9 @@ func (s *OpenAIGatewayService) prepareLiveAttestation(ctx context.Context) (stri
 }
 
 func (s *OpenAIGatewayService) decryptLiveAttestation(record *LiveCallRecord) (string, error) {
+	if liveAttestationDisabled() {
+		return "", nil
+	}
 	if record == nil || strings.TrimSpace(record.AttestationCiphertext) == "" || s.liveAttestationCipher == nil {
 		return "", &LiveAttestationUnavailableError{
 			Reason: "the Live call has no reusable DeviceCheck attestation",
