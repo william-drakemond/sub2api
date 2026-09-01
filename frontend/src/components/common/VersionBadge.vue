@@ -17,6 +17,12 @@
           v-else
           class="h-3 w-12 animate-pulse rounded bg-gray-200 font-medium dark:bg-dark-600"
         ></span>
+        <!-- 本地 fork 标记：本仓库带有未合入上游的补丁，构建产物与官方同版本号不等价。 -->
+        <span
+          class="rounded px-1 py-px text-[10px] font-semibold uppercase leading-none tracking-wide bg-primary-500/15 text-primary-600 dark:bg-primary-400/20 dark:text-primary-300"
+          :title="forkBuildTitle"
+          >{{ forkBuildLabel }}</span
+        >
         <!-- Update indicator -->
         <span v-if="hasUpdate" class="relative flex h-2 w-2">
           <span
@@ -633,6 +639,9 @@
     <!-- Non-admin: Simple static version text -->
     <span v-else-if="version" class="text-xs text-gray-500 dark:text-dark-400">
       v{{ version }}
+      <span class="font-semibold uppercase text-primary-600 dark:text-primary-300">{{
+        forkBuildLabel
+      }}</span>
     </span>
   </div>
 </template>
@@ -676,6 +685,12 @@ const latestVersion = computed(() => appStore.latestVersion)
 const hasUpdate = computed(() => appStore.hasUpdate)
 const releaseInfo = computed(() => appStore.releaseInfo)
 const buildType = computed(() => appStore.buildType)
+
+// 本地 fork 构建标记。该常量随本仓库分发：只有从本 fork 构建的产物才带此文件，
+// 因此可以静态断言，不需要后端再传一个字段。上游同版本号的官方镜像不会显示。
+const forkBuildLabel = 'fork'
+const forkBuildTitle =
+  'Fork build — carries local patches not present in the upstream release of this version'
 
 // Update process states (local to this component)
 const updating = ref(false)
