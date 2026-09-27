@@ -43,6 +43,9 @@ describe('AccountPriorityCell', () => {
     const wrapper = mountCell(account({ priority: 1 }))
     const dec = wrapper.get('[data-testid="account-priority-decrement"]')
     expect(dec.attributes('disabled')).toBeDefined()
+    // 到达下限时按钮仍应随悬停显隐，而不是常驻半透明
+    expect(dec.classes()).toContain('opacity-0')
+    expect(dec.classes().some(c => c.startsWith('disabled:opacity'))).toBe(false)
     await dec.trigger('click')
     await vi.runAllTimersAsync()
     expect(update).not.toHaveBeenCalled()
