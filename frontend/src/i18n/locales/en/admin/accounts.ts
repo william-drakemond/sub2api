@@ -1716,6 +1716,8 @@ export default {
         gemini3Image: 'G31FI',
         antigravityGemini5h: 'G·5h',
         antigravityGeminiWeekly: 'G·wk',
+        antigravityArgon5h: 'A·5h',
+        antigravityArgonWeekly: 'A·wk',
         antigravityOther5h: 'C·5h',
         antigravityOtherWeekly: 'C·wk',
         claude: 'Claude',
