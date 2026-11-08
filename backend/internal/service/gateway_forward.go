@@ -100,7 +100,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			if resolved, ok := ResolveBedrockModelID(account, validationModel); ok {
 				validationModel = resolved
 			}
-		} else if account.Type == AccountTypeAPIKey {
+		} else if account.UsesAccountModelMapping() {
 			validationModel = account.GetMappedModel(validationModel)
 		}
 	}
@@ -287,7 +287,7 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	// - OAuth/SetupToken 账号：使用 Anthropic 标准映射（短ID → 长ID）
 	mappedModel := reqModel
 	mappingSource := ""
-	if account.Type == AccountTypeAPIKey {
+	if account.UsesAccountModelMapping() {
 		mappedModel = account.GetMappedModel(reqModel)
 		if mappedModel != reqModel {
 			mappingSource = "account"
