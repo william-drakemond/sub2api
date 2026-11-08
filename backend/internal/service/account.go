@@ -2147,6 +2147,21 @@ func (a *Account) IsOpenAITokenExpired() bool {
 	return time.Now().Add(60 * time.Second).After(*expiresAt)
 }
 
+// UsesAccountModelMapping reports whether the account's own model_mapping rewrites the
+// requested model before forwarding. API-key accounts always did; Anthropic OAuth and
+// setup-token accounts do too, so an anthropic group that mixes in antigravity accounts can
+// map antigravity-only names (claude-opus-5-5-high) back to the native ones. Without a
+// mapping the model is unchanged and the OAuth short-ID normalization still applies.
+func (a *Account) UsesAccountModelMapping() bool {
+	if a == nil {
+		return false
+	}
+	if a.Type == AccountTypeAPIKey {
+		return true
+	}
+	return a.Platform == PlatformAnthropic && (a.Type == AccountTypeOAuth || a.Type == AccountTypeSetupToken)
+}
+
 // IsMixedSchedulingEnabled 检查 antigravity 账户是否启用混合调度
 // 启用后可参与 anthropic/gemini 分组的账户调度
 func (a *Account) IsMixedSchedulingEnabled() bool {
