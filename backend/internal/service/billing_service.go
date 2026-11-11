@@ -1996,6 +1996,48 @@ func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *
 	return s.applyModelSpecificPricingPolicyEx(model, pricing, true, time.Time{})
 }
 
+// Gemini 4 Argon and Gemini 4 Carbon share one price card on Google AI
+// (https://aistudio.google.com/docs/pricing): the introductory Standard rates
+// $2 input / $10 output / $0.10 cached input per MTok (Priority $3.60 / $18 /
+// $0.18) run through 2026-11-30, and every rate doubles from 2026-12-01
+// (Standard $4 / $20 / $0.20, Priority $7.20 / $36 / $0.36). The catalog and
+// fallback cards carry the introductory rates; gemini4PricingAt doubles them for
+// requests billed on or after the end of the promotion (midnight Pacific).
+// A card that already carries the full rate (input other than $2/MTok) is left
+// alone, so a catalog update or a second pass never doubles it again.
+var gemini4IntroEnd = time.Date(2026, time.December, 1, 8, 0, 0, 0, time.UTC)
+
+const gemini4IntroInputPrice = 2e-6
+
+func isGemini4IntroPricedModel(model string) bool {
+	base := normalizeGeminiThinkingTierAlias(lastSegment(strings.ToLower(strings.TrimSpace(model))))
+	return base == "gemini-4-argon" || base == "gemini-4-carbon"
+}
+
+func gemini4PricingAt(model string, pricing *ModelPricing, pricingAt time.Time) *ModelPricing {
+	if pricing == nil || !isGemini4IntroPricedModel(model) {
+		return pricing
+	}
+	if pricingAt.IsZero() {
+		pricingAt = timezone.Now()
+	}
+	if pricingAt.Before(gemini4IntroEnd) || math.Abs(pricing.InputPricePerToken-gemini4IntroInputPrice) > 1e-12 {
+		return pricing
+	}
+	doubled := *pricing
+	for _, price := range []*float64{
+		&doubled.InputPricePerToken, &doubled.InputPricePerTokenPriority,
+		&doubled.OutputPricePerToken, &doubled.OutputPricePerTokenPriority,
+		&doubled.CacheReadPricePerToken, &doubled.CacheReadPricePerTokenPriority,
+		&doubled.CacheCreationPricePerToken, &doubled.CacheCreationPricePerTokenPriority,
+		&doubled.CacheCreation5mPrice, &doubled.CacheCreation1hPrice,
+		&doubled.ImageInputPricePerToken, &doubled.ImageCacheReadPricePerToken, &doubled.ImageOutputPricePerToken,
+	} {
+		*price *= 2
+	}
+	return &doubled
+}
+
 // applyModelSpecificPricingPolicyEx 与 applyModelSpecificPricingPolicy 相同，
 // 但由调用方控制是否强制 DeepSeek 官方价（forceDeepSeekRates）。
 // 保留计费时点参数以兼容现有调用；模型价卡不再按日期切换。
@@ -2004,6 +2046,11 @@ func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *
 func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing *ModelPricing, forceDeepSeekRates bool, pricingAt time.Time) *ModelPricing {
 	if pricing == nil {
 		return nil
+	}
+	// Gemini 4 Argon / Carbon 的官方优惠价只到 2026-11-30（见 gemini4IntroEnd），之后按官方价翻倍。
+	// 只处理默认价卡（forceDeepSeekRates 为 false 的分组/渠道自定义价不动）。
+	if forceDeepSeekRates {
+		pricing = gemini4PricingAt(model, pricing, pricingAt)
 	}
 	// DeepSeek 模型：无论 JSON/远端价格表给什么价，一律强制官方低谷价
 	// （Flash 三档为 2026-09-10 官方降价后口径）。这是覆盖远端旧价的关键——远端
