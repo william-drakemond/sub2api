@@ -330,7 +330,14 @@ func convertResponsesInputToAnthropic(instructions string, inputRaw json.RawMess
 	// sat between a call and its output), so a second merge restores alternation.
 	messages = mergeConsecutiveMessages(messages)
 	messages = normalizeAnthropicToolPairing(messages)
+	messages = stripTrailingThinkingFromAssistantMessages(messages)
 	messages = mergeConsecutiveMessages(messages)
+	if preserveThinking && len(messages) > 0 && messages[len(messages)-1].Role == "assistant" {
+		messages = append(messages, anthropicMessageFromBlocks("user", []AnthropicContentBlock{{
+			Type: "text",
+			Text: "Continue.",
+		}}))
+	}
 
 	var system json.RawMessage
 	if len(systemParts) > 0 {
@@ -485,6 +492,36 @@ func normalizeAnthropicToolPairing(messages []AnthropicMessage) []AnthropicMessa
 		default:
 			out = append(out, m)
 		}
+	}
+	return out
+}
+
+// stripTrailingThinkingFromAssistantMessages removes trailing thinking or
+// redacted_thinking blocks from every assistant message. Anthropic rejects any
+// assistant message whose final content block is thinking ("messages.N: The
+// final block in an assistant message cannot be `thinking`"), which otherwise
+// happens when an unanswered tool_use after a signed thinking block is dropped
+// by normalizeAnthropicToolPairing. An assistant message that held only
+// thinking blocks is dropped altogether so the surrounding user turns can merge.
+func stripTrailingThinkingFromAssistantMessages(messages []AnthropicMessage) []AnthropicMessage {
+	out := make([]AnthropicMessage, 0, len(messages))
+	for _, m := range messages {
+		if m.Role != "assistant" {
+			out = append(out, m)
+			continue
+		}
+		blocks := parseContentBlocks(m.Content)
+		trimmed := len(blocks)
+		for trimmed > 0 && (blocks[trimmed-1].Type == "thinking" || blocks[trimmed-1].Type == "redacted_thinking") {
+			trimmed--
+		}
+		if trimmed == 0 {
+			continue
+		}
+		if trimmed != len(blocks) {
+			m = anthropicMessageFromBlocks("assistant", blocks[:trimmed])
+		}
+		out = append(out, m)
 	}
 	return out
 }
