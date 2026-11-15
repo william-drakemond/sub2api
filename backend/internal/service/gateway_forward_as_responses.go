@@ -89,6 +89,17 @@ func (s *GatewayService) ForwardAsResponses(
 		return nil, fmt.Errorf("convert responses to anthropic: %w", err)
 	}
 
+	if shape, ok := trailingAssistantShape(responsesReq.Input, anthropicReq); ok {
+		logger.FromContext(c.Request.Context()).Warn("responses_to_anthropic_trailing_assistant",
+			zap.Int64("account_id", account.ID),
+			zap.String("model", mappedModel),
+			zap.Int("input_items", shape.InputItems),
+			zap.Strings("input_tail", shape.InputTail),
+			zap.Int("messages", len(anthropicReq.Messages)),
+			zap.Strings("message_tail", shape.MessageTail),
+		)
+	}
+
 	// 3. Force upstream streaming (Anthropic works best with streaming)
 	anthropicReq.Stream = true
 	reqStream := true
