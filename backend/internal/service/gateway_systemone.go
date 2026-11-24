@@ -78,7 +78,7 @@ func (s *GatewayService) forwardSystemOne(ctx context.Context, c *gin.Context, a
 		// Command Code's edge rejects unknown clients (Cloudflare 1010); use the
 		// canonical client identity the chat paths send, then any account override.
 		applyOpenCodeUpstreamUserAgent(account, req.URL.String(), req.Header)
-		account.ApplyHeaderOverrides(req.Header)
+		account.ApplyHeaderOverrides(req.Context(), req.Header)
 	} else {
 		key := account.GetTypeSafeAPIKey()
 		if key == "" {
