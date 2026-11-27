@@ -9,10 +9,7 @@ import (
 	"github.com/tidwall/sjson"
 )
 
-const (
-	geminiAIStudioHost             = "generativelanguage.googleapis.com"
-	liteLLMThoughtSignatureIDInfix = "__thought__"
-)
+const geminiAIStudioHost = "generativelanguage.googleapis.com"
 
 // targetsGeminiAIStudio reports whether the account's Chat Completions
 // upstream is Google AI Studio's OpenAI-compatible endpoint.
@@ -33,11 +30,12 @@ func targetsGeminiAIStudio(account *Account) bool {
 // Gemini returns the signature in tool_calls[].extra_content.google, but the
 // Responses items Codex keeps have no place for it, so history comes back
 // without one and AI Studio answers 400 "Function call is missing a
-// thought_signature in functionCall parts". A call whose id carries LiteLLM's
-// "__thought__<signature>" suffix (Unity's LiteLLM) gets that real signature;
-// any other gets the documented skip_thought_signature_validator value, the
-// same one the native Gemini path uses. Existing signatures are kept, and the
-// body is returned unchanged for every other upstream.
+// thought_signature in functionCall parts". Missing signatures get the
+// documented skip_thought_signature_validator value, the same one the native
+// Gemini path uses. The "__thought__<signature>" suffix that Unity's LiteLLM
+// puts in call ids is deliberately not reused: it comes from a different
+// Google backend and AI Studio rejects it as "Corrupted thought signature".
+// Existing signatures are kept, and other upstreams get the body unchanged.
 func ensureGeminiChatThoughtSignatures(account *Account, body []byte) []byte {
 	if !targetsGeminiAIStudio(account) {
 		return body
@@ -59,12 +57,8 @@ func ensureGeminiChatThoughtSignatures(account *Account, body []byte) []byte {
 			if call.Get("extra_content.google.thought_signature").String() != "" {
 				continue
 			}
-			signature := geminiDummyThoughtSignature
-			if _, suffix, ok := strings.Cut(call.Get("id").String(), liteLLMThoughtSignatureIDInfix); ok && suffix != "" {
-				signature = suffix
-			}
 			path := "messages." + strconv.Itoa(i) + ".tool_calls." + strconv.Itoa(j) + ".extra_content.google.thought_signature"
-			next, err := sjson.SetBytes(updated, path, signature)
+			next, err := sjson.SetBytes(updated, path, geminiDummyThoughtSignature)
 			if err != nil {
 				return body
 			}

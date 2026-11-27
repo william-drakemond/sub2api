@@ -42,17 +42,18 @@ func TestEnsureGeminiChatThoughtSignatures_FillsMissing(t *testing.T) {
 	require.Equal(t, "call_a", gjson.GetBytes(out, "messages.2.tool_call_id").String())
 }
 
-// Unity's LiteLLM carries the real signature in the call id; a conversation
-// that moves from it to AI Studio keeps the real signature and the id it was
-// answered under.
-func TestEnsureGeminiChatThoughtSignatures_UsesLiteLLMIDSuffix(t *testing.T) {
+// Unity's LiteLLM carries a signature in the call id, but it was issued by a
+// different Google backend: AI Studio rejects it with 400 "Corrupted thought
+// signature" (INVALID_THOUGHT_SIGNATURE). Such a call gets the placeholder and
+// keeps the id it was answered under.
+func TestEnsureGeminiChatThoughtSignatures_IgnoresLiteLLMIDSuffix(t *testing.T) {
 	body := []byte(`{"model":"gemini-4-neon","messages":[` +
 		`{"role":"assistant","tool_calls":[{"id":"call_a__thought__REALSIG","type":"function","function":{"name":"x","arguments":"{}"}}]},` +
 		`{"role":"tool","tool_call_id":"call_a__thought__REALSIG","content":"ok"}]}`)
 
 	out := ensureGeminiChatThoughtSignatures(aiStudioOpenAIAccount(), body)
 
-	require.Equal(t, "REALSIG", gjson.GetBytes(out, "messages.0.tool_calls.0.extra_content.google.thought_signature").String())
+	require.Equal(t, geminiDummyThoughtSignature, gjson.GetBytes(out, "messages.0.tool_calls.0.extra_content.google.thought_signature").String())
 	require.Equal(t, "call_a__thought__REALSIG", gjson.GetBytes(out, "messages.0.tool_calls.0.id").String())
 }
 
